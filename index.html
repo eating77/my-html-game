@@ -1,0 +1,1586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>篝火模拟器</title>
+  <style>
+    :root {
+      --ink: #3d2b1f;
+      --paper: #f3e6c8;
+      --paper2: #ead7b0;
+      --warm: #c45c26;
+      --btn: #f8edd8;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; height: 100%; overflow: hidden;
+      background: var(--paper);
+      font-family: "Segoe Script", "Brush Script MT", "KaiTi", "STKaiti", "Comic Sans MS", cursive;
+      color: var(--ink);
+      touch-action: none;
+      user-select: none;
+    }
+    #paper-noise {
+      position: fixed; inset: 0; pointer-events: none; z-index: 4;
+      opacity: 0.42; mix-blend-mode: multiply;
+      background-color: #e8d4a8;
+      filter: url(#paperFilter);
+    }
+    #paper-grain {
+      position: fixed; inset: 0; pointer-events: none; z-index: 5;
+      opacity: 0.32;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+      mix-blend-mode: overlay;
+    }
+    canvas { display: block; width: 100%; height: 100%; position: relative; z-index: 1; }
+    header {
+      position: fixed; top: max(34px, calc(env(safe-area-inset-top) + 24px)); left: 0; right: 0;
+      text-align: center; z-index: 6; pointer-events: none;
+    }
+    header h1 {
+      margin: 0; font-size: clamp(20px, 5vw, 30px); font-weight: 300; letter-spacing: 0.28em; text-indent: 0.28em;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      display: flex; align-items: center; justify-content: center; gap: 14px;
+    }
+    header h1 .dash { font-weight: 200; opacity: .85; }
+    #hint {
+      position: fixed; top: 52%; left: 50%; transform: translate(-50%, -50%) rotate(-1deg);
+      z-index: 6; text-align: center; font-size: 13px; font-weight: 300;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      background: rgba(248,237,216,.8); padding: 10px 18px;
+      border: none;
+      border-radius: 2px 5px 3px 6px / 5px 3px 6px 2px;
+      pointer-events: none;
+      transition: opacity 0.6s;
+    }
+    footer {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+      padding: 8px 12px max(14px, env(safe-area-inset-bottom));
+      display: flex; flex-direction: column; gap: 14px; align-items: center;
+      touch-action: manipulation;
+    }
+    .row {
+      display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: center;
+      max-width: 720px; width: 100%;
+    }
+    .chip {
+      position: relative;
+      background: rgba(248,237,216,.72);
+      border: none;
+      border-radius: 2px 5px 3px 6px / 5px 3px 6px 2px;
+      padding: 7px 12px;
+      display: flex; align-items: center; gap: 8px;
+      min-height: 42px;
+      color: #3d2b1f;
+      box-shadow: none;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-weight: 300;
+    }
+    /* 不闭合铅笔线：每条边单独画，有缺口、有断墨，透明度不统一 */
+    .chip::before {
+      content: ""; position: absolute; inset: -3px; pointer-events: none;
+      border-radius: inherit;
+      padding: 1.8px;
+      background:
+        linear-gradient(90deg, rgba(61,43,31,.95) 0 68%, transparent 68% 76%, rgba(61,43,31,.45) 76% 94%, transparent 94%) top / 100% 2.4px no-repeat,
+        linear-gradient(90deg, transparent 0 8%, rgba(61,43,31,.35) 8% 22%, rgba(61,43,31,.9) 22% 84%, transparent 84%) bottom / 100% 2.4px no-repeat,
+        linear-gradient(0deg, rgba(61,43,31,.8) 0 58%, transparent 58% 68%, rgba(61,43,31,.4) 68% 90%, transparent 90%) left / 2.4px 100% no-repeat,
+        linear-gradient(0deg, transparent 0 12%, rgba(61,43,31,.5) 12% 45%, rgba(61,43,31,.95) 45% 78%, transparent 78%) right / 2.4px 100% no-repeat;
+      filter: url(#pencilWobble);
+      /* 铅笔颗粒：用噪点把线条咬出缺口 */
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 3 -0.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)'/%3E%3C/svg%3E");
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 3 -0.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)'/%3E%3C/svg%3E");
+    }
+    /* 小朋友手抖：边不直、角不圆、每张纸歪法不同 */
+    #woodRow .chip:nth-child(1) { border-radius: 2px 6px 2px 5px / 6px 2px 5px 3px; transform: rotate(-1.4deg) skewX(-1deg); }
+    #woodRow .chip:nth-child(2) { border-radius: 5px 2px 6px 3px / 3px 5px 2px 6px; transform: rotate(1.1deg) skewX(0.8deg); }
+    #timeBar .tbtn:nth-child(1) { border-radius: 2px 5px 3px 4px / 5px 2px 4px 3px; transform: rotate(-1deg); }
+    #timeBar .tbtn:nth-child(2) { border-radius: 5px 2px 4px 3px / 2px 4px 3px 5px; transform: rotate(0.8deg) translateY(1px); }
+    #timeBar .tbtn:nth-child(3) { border-radius: 3px 4px 2px 5px / 4px 3px 5px 2px; transform: rotate(-0.7deg) skewX(1deg); }
+    #timeBar .tbtn:nth-child(4) { border-radius: 4px 3px 5px 2px / 3px 5px 2px 4px; transform: rotate(1.2deg); }
+    #topR .chip { border-radius: 4px 2px 5px 3px / 2px 5px 3px 4px; }
+    #topR .chip:nth-child(2) { border-radius: 2px 5px 3px 4px / 5px 3px 4px 2px; transform: rotate(-0.9deg); }
+    button.chip, .chip label, #hint {
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      font-weight: 300;
+    }
+    button.chip {
+      color: #3d2b1f; cursor: pointer;
+      font-size: 14px; letter-spacing: 0.1em;
+    }
+    button.chip > *, .chip > label { position: relative; z-index: 1; }
+    button.chip:active { transform: translate(1px, 1px); background: rgba(240,217,176,.8); }
+    button.chip.active { background: rgba(240,194,122,.85); color: #3d2b1f; }
+    .tbtn.active { background: rgba(61,43,31,.92) !important; color: #f8edd8 !important; box-shadow: none; }
+    .tgl.on { background: rgba(232,211,168,.85); }
+    #timeBar { background: transparent; border: none; box-shadow: none; padding: 0; gap: 13px; }
+    #timeBar::before { display: none; }
+    #woodRow { gap: 18px; }
+    #topR { gap: 12px; }
+    /* 每个按钮断墨位置都不一样：缺口/浓淡错开，不重复 */
+    #woodRow .chip:nth-child(1)::before {
+      background:
+        linear-gradient(90deg, rgba(61,43,31,.9) 0 55%, transparent 55% 64%, rgba(61,43,31,.5) 64% 90%, transparent 90%) top / 100% 2.4px no-repeat,
+        linear-gradient(90deg, transparent 0 14%, rgba(61,43,31,.95) 14% 70%, transparent 70% 78%, rgba(61,43,31,.4) 78% 96%) bottom / 100% 2.4px no-repeat,
+        linear-gradient(0deg, rgba(61,43,31,.45) 0 40%, rgba(61,43,31,.9) 40% 72%, transparent 72%) left / 2.4px 100% no-repeat,
+        linear-gradient(0deg, transparent 0 8%, rgba(61,43,31,.85) 8% 60%, transparent 60% 70%, rgba(61,43,31,.5) 70% 92%) right / 2.4px 100% no-repeat;
+    }
+    #woodRow .chip:nth-child(2)::before {
+      background:
+        linear-gradient(90deg, transparent 0 10%, rgba(61,43,31,.5) 10% 35%, rgba(61,43,31,.95) 35% 80%, transparent 80%) top / 100% 2.4px no-repeat,
+        linear-gradient(90deg, rgba(61,43,31,.85) 0 62%, transparent 62% 72%, rgba(61,43,31,.4) 72% 95%) bottom / 100% 2.4px no-repeat,
+        linear-gradient(0deg, transparent 0 15%, rgba(61,43,31,.9) 15% 55%, transparent 55% 65%, rgba(61,43,31,.45) 65% 90%) left / 2.4px 100% no-repeat,
+        linear-gradient(0deg, rgba(61,43,31,.9) 0 50%, transparent 50% 60%, rgba(61,43,31,.4) 60% 88%, transparent 88%) right / 2.4px 100% no-repeat;
+    }
+    #timeBar .tbtn:nth-child(1)::before {
+      background:
+        linear-gradient(90deg, rgba(61,43,31,.45) 0 30%, rgba(61,43,31,.9) 30% 75%, transparent 75%) top / 100% 2.4px no-repeat,
+        linear-gradient(90deg, transparent 0 6%, rgba(61,43,31,.85) 6% 55%, transparent 55% 66%, rgba(61,43,31,.5) 66% 94%) bottom / 100% 2.4px no-repeat,
+        linear-gradient(0deg, rgba(61,43,31,.9) 0 45%, transparent 45% 55%, rgba(61,43,31,.4) 55% 85%, transparent 85%) left / 2.4px 100% no-repeat,
+        linear-gradient(0deg, transparent 0 20%, rgba(61,43,31,.5) 20% 50%, rgba(61,43,31,.95) 50% 85%) right / 2.4px 100% no-repeat;
+    }
+    #timeBar .tbtn:nth-child(2)::before {
+      background:
+        linear-gradient(90deg, rgba(61,43,31,.95) 0 60%, transparent 60% 70%, rgba(61,43,31,.45) 70% 92%) top / 100% 2.4px no-repeat,
+        linear-gradient(90deg, rgba(61,43,31,.4) 0 25%, rgba(61,43,31,.9) 25% 65%, transparent 65%) bottom / 100% 2.4px no-repeat,
+        linear-gradient(0deg, transparent 0 10%, rgba(61,43,31,.85) 10% 60%, transparent 60%) left / 2.4px 100% no-repeat,
+        linear-gradient(0deg, rgba(61,43,31,.5) 0 35%, rgba(61,43,31,.9) 35% 75%, transparent 75% 85%, rgba(61,43,31,.4) 85% 95%) right / 2.4px 100% no-repeat;
+    }
+    #timeBar .tbtn:nth-child(3)::before {
+      background:
+        linear-gradient(90deg, transparent 0 12%, rgba(61,43,31,.9) 12% 58%, transparent 58% 68%, rgba(61,43,31,.45) 68% 93%) top / 100% 2.4px no-repeat,
+        linear-gradient(90deg, rgba(61,43,31,.9) 0 48%, transparent 48% 58%, rgba(61,43,31,.5) 58% 90%) bottom / 100% 2.4px no-repeat,
+        linear-gradient(0deg, rgba(61,43,31,.5) 0 30%, rgba(61,43,31,.95) 30% 68%, transparent 68%) left / 2.4px 100% no-repeat,
+        linear-gradient(0deg, transparent 0 5%, rgba(61,43,31,.85) 5% 45%, transparent 45% 55%, rgba(61,43,31,.45) 55% 88%) right / 2.4px 100% no-repeat;
+    }
+    #timeBar .tbtn:nth-child(4)::before {
+      background:
+        linear-gradient(90deg, rgba(61,43,31,.85) 0 42%, transparent 42% 52%, rgba(61,43,31,.5) 52% 85%, transparent 85%) top / 100% 2.4px no-repeat,
+        linear-gradient(90deg, transparent 0 18%, rgba(61,43,31,.45) 18% 40%, rgba(61,43,31,.95) 40% 82%) bottom / 100% 2.4px no-repeat,
+        linear-gradient(0deg, transparent 0 12%, rgba(61,43,31,.45) 12% 38%, rgba(61,43,31,.9) 38% 72%, transparent 72%) left / 2.4px 100% no-repeat,
+        linear-gradient(0deg, rgba(61,43,31,.9) 0 55%, transparent 55% 65%, rgba(61,43,31,.45) 65% 90%) right / 2.4px 100% no-repeat;
+    }
+    #topR .chip:nth-child(1)::before {
+      background:
+        linear-gradient(90deg, rgba(61,43,31,.5) 0 35%, rgba(61,43,31,.9) 35% 78%, transparent 78%) top / 100% 2.4px no-repeat,
+        linear-gradient(90deg, transparent 0 10%, rgba(61,43,31,.85) 10% 60%, transparent 60% 70%, rgba(61,43,31,.4) 70% 92%) bottom / 100% 2.4px no-repeat,
+        linear-gradient(0deg, rgba(61,43,31,.9) 0 50%, transparent 50% 62%, rgba(61,43,31,.45) 62% 88%) left / 2.4px 100% no-repeat,
+        linear-gradient(0deg, transparent 0 15%, rgba(61,43,31,.5) 15% 45%, rgba(61,43,31,.9) 45% 80%) right / 2.4px 100% no-repeat;
+    }
+    #topR .chip:nth-child(2)::before, #topR button.chip::before {
+      background:
+        linear-gradient(90deg, transparent 0 8%, rgba(61,43,31,.95) 8% 52%, transparent 52% 62%, rgba(61,43,31,.4) 62% 90%) top / 100% 2.4px no-repeat,
+        linear-gradient(90deg, rgba(61,43,31,.9) 0 66%, transparent 66% 76%, rgba(61,43,31,.45) 76% 94%) bottom / 100% 2.4px no-repeat,
+        linear-gradient(0deg, rgba(61,43,31,.45) 0 35%, rgba(61,43,31,.9) 35% 70%, transparent 70%) left / 2.4px 100% no-repeat,
+        linear-gradient(0deg, transparent 0 10%, rgba(61,43,31,.85) 10% 55%, transparent 55% 65%, rgba(61,43,31,.5) 65% 90%) right / 2.4px 100% no-repeat;
+    }
+    label { font-size: 12px; white-space: nowrap; font-weight: 300; }
+    input[type="range"] {
+      -webkit-appearance: none; appearance: none;
+      width: min(38vw, 140px); height: 8px; background: transparent; cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 7px; background: #e9d6ae;
+      border: 1.6px solid var(--ink);
+      border-radius: 40px 8px 30px 8px;
+    }
+    input[type="range"]::-moz-range-track {
+      height: 6px; background: #d9b68a; border: 1.5px solid var(--ink); border-radius: 20px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 20px; height: 19px; margin-top: -8px;
+      background: #f4e3c0; border: 2.2px solid var(--ink);
+      border-radius: 46% 54% 52% 48% / 55% 46% 54% 45%;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 18px; height: 18px; background: #e07a3d; border: 2px solid var(--ink);
+      border-radius: 40% 60% 50% 45%;
+    }
+    #compass{position:fixed;left:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:6;width:64px;height:64px;pointer-events:none;transform:rotate(-2deg)}
+    #compass canvas{width:64px;height:64px;display:block}
+    .tbtn{position:relative;font-size:12px;padding:5px 9px}
+    .tbtn.active{background:#3d2b1f;color:#f8edd8}
+    .tgl{min-width:64px;justify-content:center}
+    .tgl .dot{width:14px;height:14px;border:2px solid var(--ink);border-radius:50% 45% 55% 50%;background:#fff;display:inline-block}
+    .tgl.on .dot{background:#3d2b1f}
+    /* 加柴/减柴：在时间段按钮上方 */
+    #woodRow .chip{min-width:72px;justify-content:center}
+    /* 右上顶角：音量/蝉鸣 */
+    #topR{position:fixed;right:10px;top:max(104px, calc(env(safe-area-inset-top) + 88px));z-index:6;display:flex;flex-direction:column;gap:12px;align-items:flex-end}
+    #topR .chip{padding:6px 12px;min-height:40px}
+    @media (max-width: 520px) {
+      input[type="range"] { width: 96px; }
+      .chip { padding: 6px 9px; }
+      button.chip { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute">
+    <filter id="paperFilter">
+      <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="5" seed="7" result="n"/>
+      <feDiffuseLighting in="n" lighting-color="#f4e4c1" surfaceScale="2.2">
+        <feDistantLight azimuth="45" elevation="55"/>
+      </feDiffuseLighting>
+    </filter>
+    <filter id="pencilWobble" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.032" numOctaves="4" seed="11" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="10" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+  <div id="paper-noise"></div>
+  <div id="paper-grain"></div>
+  <canvas id="c"></canvas>
+  <header>
+    <h1><span class="dash">–</span>篝火模拟器<span class="dash">–</span></h1>
+  </header>
+  <div id="hint">轻触画面，点燃声音</div>
+  <div id="topR">
+    <div class="chip">
+      <label for="vol">音量</label>
+      <input id="vol" type="range" min="0" max="100" value="55" />
+    </div>
+    <button class="chip tgl" id="cicada" type="button"><span class="dot"></span>蝉鸣</button>
+  </div>
+  <footer>
+    <div class="row" id="woodRow">
+      <button class="chip" id="addWood" type="button">加柴</button>
+      <button class="chip" id="rmWood" type="button">减柴</button>
+    </div>
+    <div class="row">
+      <div class="chip" id="timeBar">
+        <button class="chip tbtn" data-time="morning" type="button">清晨</button>
+        <button class="chip tbtn active" data-time="noon" type="button">正午</button>
+        <button class="chip tbtn" data-time="dusk" type="button">傍晚</button>
+        <button class="chip tbtn" data-time="night" type="button">晚上</button>
+      </div>
+    </div>
+  </footer>
+  <div id="compass"><canvas id="cc" width="128" height="128"></canvas></div>
+
+  <script>
+(function () {
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const hint = document.getElementById("hint");
+
+  const INK = "#3d2b1f";
+  const PAL = {
+    ground: "#c9a36a",
+    ground2: "#b5894e",
+    pit: "#6b3f24",
+    stone: ["#b7a48c", "#9d8b74", "#c4b49a", "#8e7c66"],
+    log: ["#7a4a28", "#8d5a32", "#694022", "#a56b3c"],
+    logEnd: "#c9a07a",
+    flame: ["#c4452a", "#e06a28", "#f0a33a", "#ffe08a", "#fff4c2"],
+    spark: ["#ffd36a", "#ff8a3a", "#ff5a2a", "#fff3c4"],
+    grass: "#6a8f4a",
+  };
+
+  const TIMES = {
+    morning: { bg: [222,236,244], bg2: [205,225,238], flame: 0.85, glow: 0.5, cicada: 0.55, night: 0 },
+    noon:    { bg: [255,248,231], bg2: [255,240,210], flame: 0.65, glow: 0.3, cicada: 0.75, night: 0 },
+    dusk:    { bg: [255,228,181], bg2: [255,200,140], flame: 1.0,  glow: 0.8, cicada: 0.9,  night: 0.25 },
+    night:   { bg: [26,26,46],    bg2: [40,36,70],    flame: 1.35, glow: 1.4, cicada: 1.0,  night: 1 },
+  };
+  const state = {
+    wood: 2,
+    maxWood: 8,
+    volume: 0.55,
+    wind: 0.15,
+    time: "noon", bgCur: [...TIMES.noon.bg], bg2Cur: [...TIMES.noon.bg2],
+    bgFrom: [...TIMES.noon.bg], bg2From: [...TIMES.noon.bg2], bgT: 1,
+    flameK: TIMES.noon.flame, flameKFrom: TIMES.noon.flame,
+    nightK: 0, nightKFrom: 0,
+    cicadaK: TIMES.noon.cicada, cicadaKFrom: TIMES.noon.cicada,
+    cicadaOn: false,
+    yaw: Math.PI / 4, pitch: 0.62,
+    vyaw: 0, vpitch: 0, dragging: false, inertia: 0,
+    viewName: "free",
+    blend: { iso: 1, top: 0, front: 0 },
+    logs: [],
+    stones: [],
+    tufts: [],
+    flames: [],
+    sparks: [],
+    t: 0,
+    audioOn: false,
+  };
+
+  function hash(n) {
+    const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function ease(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
+  /* ---------- 自由轨道视角：yaw 绕Y(0~360°)，pitch 绕X(-60°~+60°) ---------- */
+  const P_MIN = -Math.PI / 3, P_MAX = Math.PI / 3;
+  function viewWeights() {
+    const p = state.pitch;
+    const top = clamp((p - 0.72) / (1.047 - 0.72), 0, 1);
+    const front = clamp((0.28 - p) / (0.28 - (-0.5)), 0, 1);
+    const iso = Math.max(0, 1 - top - front);
+    const s = top + front + iso || 1;
+    return { iso: iso / s, top: top / s, front: front / s };
+  }
+  function layouts(x, y, z) {
+    const cy = Math.cos(state.yaw), sy = Math.sin(state.yaw);
+    const xr = x * cy - z * sy, zr = x * sy + z * cy;
+    const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
+    const o = { x: xr, y: zr * sp - y * cp };
+    return { iso: o, top: o, front: o };
+  }
+  function mixP(x, y, z, w) {
+    const L = layouts(x, y, z);
+    return {
+      x: L.iso.x * w.iso + L.top.x * w.top + L.front.x * w.front,
+      y: L.iso.y * w.iso + L.top.y * w.top + L.front.y * w.front,
+    };
+  }
+  function cam(w, W, H) {
+    const cx = W * 0.5;
+    // 【修正2】主体整体下移约17%画布高度，顶部留白给火星，旋转中心同步下移
+    const cy = H * 0.71;
+    const sc = Math.min(W, H) / 520 * 1.1;
+    return { cx, cy, sc };
+  }
+
+  function jitterPt(x, y, seed, amt) {
+    return {
+      x: x + (hash(seed) - 0.5) * amt,
+      y: y + (hash(seed + 9.1) - 0.5) * amt,
+    };
+  }
+
+  function sketchLoop(pts, seed, amt) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      // 抖动加倍：水墨手颤感（种子固定，不闪烁）
+      out.push(jitterPt(pts[i].x, pts[i].y, seed + i * 1.7, amt * 2.1));
+    }
+    return out;
+  }
+
+  function fillStroke(pts, fill, stroke, lw) {
+    if (pts.length < 3) return;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i <= pts.length; i++) {
+      const p = pts[i % pts.length];
+      const q = pts[(i - 1) % pts.length];
+      const jx = (hash(q.x * 0.13 + i) - 0.5) * 3.2;
+      const jy = (hash(q.y * 0.17 + i * 2.1) - 0.5) * 3.2;
+      ctx.lineTo(p.x + jx, p.y + jy);
+    }
+    ctx.closePath();
+    if (fill) {
+      // 渐变彩绘：纵向淡彩过渡（水墨感）
+      if (typeof fill === "string" && pts.length) {
+        let y0 = pts[0].y, y1 = pts[0].y;
+        for (const p of pts) { if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y; }
+        if (y1 - y0 > 2) {
+          const g = ctx.createLinearGradient(0, y1, 0, y0);
+          g.addColorStop(0, fill);
+          g.addColorStop(1, "#fff8e8");
+          ctx.fillStyle = g; ctx.fill();
+        } else { ctx.fillStyle = fill; ctx.fill(); }
+      } else { ctx.fillStyle = fill; ctx.fill(); }
+    }
+    if (stroke) {
+      ctx.save();
+      ctx.strokeStyle = stroke;
+      ctx.globalAlpha *= 0.55;
+      ctx.lineWidth = lw || 1.8;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function sketchLine(ax, ay, bx, by, seed, lw, color) {
+    ctx.beginPath();
+    const n = 5;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const x = lerp(ax, bx, t) + (hash(seed + i) - 0.5) * 2.2;
+      const y = lerp(ay, by, t) + (hash(seed + i + 3) - 0.5) * 2.2;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = color || INK;
+    ctx.lineWidth = lw || 1.5;
+    ctx.lineCap = "round";
+    ctx.stroke();
+  }
+
+  /* ---------- 场景物体 ---------- */
+  function makeStones() {
+    state.stones = [];
+    for (let i = 0; i < 11; i++) {
+      const a = (i / 11) * Math.PI * 2 + hash(i + 2) * 0.3;
+      const r = 96 + hash(i + 5) * 18;
+      state.stones.push({
+        x: Math.cos(a) * r,
+        z: Math.sin(a) * r,
+        rx: 11 + hash(i + 8) * 8,
+        rz: 8 + hash(i + 11) * 6,
+        ry: 6 + hash(i + 13) * 4,
+        c: PAL.stone[i % PAL.stone.length],
+        seed: 20 + i,
+      });
+    }
+  }
+  function makeTufts() {
+    state.tufts = [];
+    for (let i = 0; i < 16; i++) {
+      const a = hash(i * 3.2) * Math.PI * 2;
+      const r = 110 + hash(i * 7.1) * 90;
+      state.tufts.push({
+        x: Math.cos(a) * r,
+        z: Math.sin(a) * r,
+        n: 3 + (i % 3),
+        seed: 80 + i,
+      });
+    }
+  }
+  function restY(i) {
+    return 9 + Math.floor(i / 2) * 11 + (i % 2) * 3;
+  }
+  function addLog(animate) {
+    if (state.logs.length >= state.maxWood) return;
+    const i = state.logs.length;
+    // 前两根强制交叉：搭出稳定的"相交区域"，火焰底部就钉在这里
+    const ang = i === 0 ? 0.45 + hash(1.7) * 0.2 : i === 1 ? -0.55 + hash(2.3) * 0.2 : (i * 2.3 + hash(i + 1) * 0.8);
+    // 长而真实：132~176，火宽 ~80，两头各露出一大截
+    const len = 132 + hash(i + 4) * 44;
+    const off = 4 + hash(i + 6) * 8;
+    const log = {
+      ang, len, off,
+      y: animate ? 70 : restY(i),
+      ty: restY(i),
+      r: 11 + hash(i + 9) * 5,
+      c: PAL.log[i % PAL.log.length],
+      seed: 100 + i * 3,
+      born: state.t,
+    };
+    state.logs.push(log);
+    state.wood = state.logs.length;
+  }
+  function initLogs() {
+    state.logs = [];
+    for (let i = 0; i < 2; i++) addLog(false);
+  }
+  function makeFlames() {
+    state.flames = [];
+    for (let i = 0; i < 5; i++) {
+      state.flames.push({
+        phase: hash(i + 40) * Math.PI * 2,
+        ox: (hash(i + 41) - 0.5) * 10,
+        oz: (hash(i + 42) - 0.5) * 10,
+        layer: i,
+      });
+    }
+  }
+
+  makeStones(); makeTufts(); initLogs(); makeFlames();
+
+  // 火底世界锚点：固定在前两根柴相交区域，加柴只向上长，绝不往下掉
+  const FIREBASE_Y = 14;
+  // 手机端：火焰整体（不含木柴）放大 30%，桌面端保持不变
+  function flameBoost() {
+    try {
+      if (window.matchMedia && matchMedia("(pointer: coarse)").matches) return 1.3;
+    } catch (e) {}
+    return Math.min(window.innerWidth || 9999, window.innerHeight || 9999) < 560 ? 1.3 : 1;
+  }
+  /* ---------- 火焰轮廓：等距/正面=泪滴，俯视=辐射圆，再插值 ---------- */
+  function flameOutline(cx, cy, layer, t, w, intensity, sc) {
+    const n = 18;
+    const ptsIso = [];
+    const ptsTop = [];
+    const ptsFront = [];
+    // 火身收窄：给底下柴火让位置（【修正1】底部更窄，嵌入柴堆不遮柴）
+    // 手机端反馈：全阶段放大30%，宽度再+15%
+    const size = (0.6 + intensity * 1.5) * (1.15 - layer * 0.13) * 1.3 * flameBoost();
+    const baseW = 30 * size * sc;
+    const isoH = 112 * size * sc;
+    const frontH = 150 * size * sc;
+    const topR = 31 * size * (1.15 - layer * 0.08) * sc;
+    const windLean = state.wind * 22 * (0.4 + intensity);
+    const wob = t * (2.4 + layer * 0.35) + layer * 1.7;
+    // 左右飘动：两层正弦叠加，每层相位不同，火尖摆得比火底大
+    const swayA = Math.sin(t * 1.4 + layer * 1.9) * (7 + intensity * 9);
+    const swayB = Math.sin(t * 2.9 + layer * 0.7 + 1.2) * (3 + intensity * 4);
+    const swayX = (swayA + swayB) * sc;
+
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+      const ny = Math.sin(a);
+      const nx = Math.cos(a);
+      const bottom = ny * 0.5 + 0.5;
+      const tip = 1 - bottom;
+      // 【修正1】尖锥收底：底部宽度压到约30%，只占柴堆中心缝隙
+      const width = 0.08 + 0.92 * Math.pow(bottom, 1.25);
+      // 底部锚定、中上抖动：抖动幅度随高度递增，底部几乎不动
+      // 左右不对称抖：x 方向多加一层和 sway 同频的扰动，火会"拧"着飘
+      const fl = 0.10 * Math.sin(wob * 0.7 + i * 0.9) + 0.05 * Math.sin(wob * 1.2 + i * 0.6);
+      const flick = 1 + fl * (0.15 + 0.85 * tip * tip);
+      const swayJit = Math.sin(wob * 0.55 + i * 0.45) * 0.12 * tip;
+      // 向上延伸：火尖随时间上下窜，底部不动
+      const stretch = tip * tip * Math.sin(t * 3.1 + layer * 1.3) * 0.10;
+      const lean = (0.15 + bottom) * windLean * sc;
+      // 摆动随高度放大：火底 ~15%，火尖 100%
+      const swayK = (0.15 + 0.85 * tip * tip);
+
+      ptsIso.push({
+        x: cx + nx * baseW * width * flick * (1 + swayJit) + lean * 0.45 + swayX * swayK,
+        // 火底钉死在 cy：bottom(ny=+1)->cy，火尖(ny=-1)->cy-H，只向上长
+        y: cy - (1 - ny) * 0.5 * isoH * flick - tip * tip * Math.sin(t * 3.1 + layer * 1.3) * 0.10 * isoH,
+      });
+
+      const rTop = (0.70 + 0.30 * Math.sin(a * 3 + wob)) * flick;
+      const rad = topR * rTop;
+      ptsTop.push({
+        x: cx + nx * rad * (1 + Math.abs(state.wind) * 0.2) + state.wind * 10 * sc * (0.2 + layer * 0.08),
+        y: cy + ny * rad,
+      });
+
+      ptsFront.push({
+        x: cx + nx * baseW * 0.95 * width * flick * (1 + swayJit) + lean + swayX * swayK,
+        y: cy - (1 - ny) * 0.5 * frontH * flick - tip * tip * Math.sin(t * 3.1 + layer * 1.3) * 0.10 * frontH,
+      });
+    }
+
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      pts.push({
+        x: ptsIso[i].x * w.iso + ptsTop[i].x * w.top + ptsFront[i].x * w.front,
+        y: ptsIso[i].y * w.iso + ptsTop[i].y * w.top + ptsFront[i].y * w.front,
+      });
+    }
+    return sketchLoop(pts, 200 + layer * 11 + Math.floor(t * 2), 4.2);
+  }
+
+  /* ---------- 原木：三套剪影顶点插值 ---------- */
+  function logPoints(log, w, C) {
+    const hx = Math.cos(log.ang) * log.len * 0.5;
+    const hz = Math.sin(log.ang) * log.len * 0.5;
+    const ox = Math.cos(log.ang + 1.2) * log.off;
+    const oz = Math.sin(log.ang + 1.2) * log.off;
+    const y = log.y;
+    const r = log.r;
+
+    const ends = [
+      mixP(ox - hx, y, oz - hz, w),
+      mixP(ox + hx, y, oz + hz, w),
+    ];
+    const perpIso = { x: -(ends[1].y - ends[0].y), y: ends[1].x - ends[0].x };
+    const plen = Math.hypot(perpIso.x, perpIso.y) || 1;
+    const nx = perpIso.x / plen;
+    const ny = perpIso.y / plen;
+
+    const topA = mixP(ox - hx, y + r, oz - hz, w);
+    const topB = mixP(ox + hx, y + r, oz + hz, w);
+    const botA = mixP(ox - hx, y - r, oz - hz, w);
+    const botB = mixP(ox + hx, y - r, oz + hz, w);
+
+    const isoBody = [
+      { x: botA.x + nx * r * 0.2, y: botA.y + ny * r * 0.2 },
+      { x: botB.x + nx * r * 0.2, y: botB.y + ny * r * 0.2 },
+      { x: topB.x - nx * r * 0.15, y: topB.y - ny * r * 0.15 },
+      { x: topA.x - nx * r * 0.15, y: topA.y - ny * r * 0.15 },
+    ];
+
+    const ta = log.ang;
+    const topBody = [
+      mixP(ox - hx - Math.sin(ta) * r, y, oz - hz + Math.cos(ta) * r, w),
+      mixP(ox + hx - Math.sin(ta) * r, y, oz + hz + Math.cos(ta) * r, w),
+      mixP(ox + hx + Math.sin(ta) * r, y, oz + hz - Math.cos(ta) * r, w),
+      mixP(ox - hx + Math.sin(ta) * r, y, oz - hz - Math.cos(ta) * r, w),
+    ];
+
+    const frontBody = [
+      mixP(ox - hx, y - r, oz - hz, w),
+      mixP(ox + hx, y - r, oz + hz, w),
+      mixP(ox + hx, y + r, oz + hz, w),
+      mixP(ox - hx, y + r, oz - hz, w),
+    ];
+
+    const body = [];
+    for (let i = 0; i < 4; i++) {
+      body.push({
+        x: (isoBody[i].x * w.iso + topBody[i].x * w.top + frontBody[i].x * w.front) * C.sc + C.cx,
+        y: (isoBody[i].y * w.iso + topBody[i].y * w.top + frontBody[i].y * w.front) * C.sc + C.cy,
+      });
+    }
+    const e0 = { x: ends[0].x * C.sc + C.cx, y: ends[0].y * C.sc + C.cy };
+    const e1 = { x: ends[1].x * C.sc + C.cx, y: ends[1].y * C.sc + C.cy };
+    return { body: sketchLoop(body, log.seed, 2.2), e0, e1, r: r * C.sc };
+  }
+
+  /* ---------- 柴下小土堆：代替大圆盘地面，转起来更立体 ---------- */
+  function groundShape(w, C) {
+    const n = 22;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const gx = Math.cos(a) * 104;
+      const gz = Math.sin(a) * 104;
+      const iso = layouts(gx, 0, gz).iso;
+      const top = layouts(gx * 0.95, 0, gz * 0.95).top;
+      const front = { x: Math.cos(a) * 112, y: 30 + Math.sin(a) * 12 };
+      pts.push({
+        x: (iso.x * w.iso + top.x * w.top + front.x * w.front) * C.sc + C.cx,
+        y: (iso.y * w.iso + top.y * w.top + front.y * w.front) * C.sc + C.cy,
+      });
+    }
+    return sketchLoop(pts, 3, 3.2);
+  }
+  // 土堆顶部受光：小土包隆起的那一笔浅色
+  function moundShape(w, C) {
+    const n = 18;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const gx = Math.cos(a) * 74;
+      const gz = Math.sin(a) * 74;
+      const iso = layouts(gx, 3, gz).iso;
+      const top = layouts(gx * 0.95, 3, gz * 0.95).top;
+      const front = { x: Math.cos(a) * 80, y: 22 + Math.sin(a) * 9 };
+      pts.push({
+        x: (iso.x * w.iso + top.x * w.top + front.x * w.front) * C.sc + C.cx,
+        y: (iso.y * w.iso + top.y * w.top + front.y * w.front) * C.sc + C.cy,
+      });
+    }
+    return sketchLoop(pts, 33, 2.6);
+  }
+
+  function pitShape(w, C) {
+    const n = 16;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const iso = layouts(Math.cos(a) * 62, 2, Math.sin(a) * 62).iso;
+      const top = layouts(Math.cos(a) * 60, 2, Math.sin(a) * 60).top;
+      const front = { x: Math.cos(a) * 68, y: 14 + Math.sin(a) * 12 };
+      pts.push({
+        x: (iso.x * w.iso + top.x * w.top + front.x * w.front) * C.sc + C.cx,
+        y: (iso.y * w.iso + top.y * w.top + front.y * w.front) * C.sc + C.cy,
+      });
+    }
+    return sketchLoop(pts, 6, 2.4);
+  }
+
+  /* ---------- 火星：从最高层火焰顶部冒出来，往上飘、渐隐 ---------- */
+  // 世界坐标 +y 为上（layouts: screenY = zr*sp - y*cp）。
+  // 火底钉在 FIREBASE_Y，火尖 = FIREBASE_Y + 最高层(layer 0)的实际渲染高度，
+  // 与 flameOutline 的 size 公式严格同源，加柴变大时火星出生点同步上移。
+  function flameTipY(intensity, w) {
+    const size0 = (0.6 + intensity * 1.5) * 1.15 * 1.3 * flameBoost();
+    const hPxPerSc = 112 * size0 * (w ? w.iso : 1)
+      + 150 * size0 * (w ? w.front : 0)
+      + 31 * size0 * (w ? w.top : 0);
+    const cp = Math.max(0.35, Math.cos(state.pitch));
+    return FIREBASE_Y + (hPxPerSc / cp) * 0.92;
+  }
+  function sparkBirthY(intensity, w) {
+    // 出生在最高层火尖处及稍下方 0~18（允许和火焰顶部重叠），绝不在柴下
+    return flameTipY(intensity, w) - Math.random() * 18;
+  }
+  function spawnSpark(intensity, w) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 14;
+    state.sparks.push({
+      x: Math.cos(a) * r,
+      y: sparkBirthY(intensity, w),
+      z: Math.sin(a) * r,
+      vx: (Math.random() * 2 - 1) * 12, vy: 45 + Math.random() * 40, vz: (Math.random() * 2 - 1) * 8,
+      life: 0.9 + Math.random() * 1.1,
+      age: 0,
+      size: 1.4 + Math.random() * 2.2,
+      c: PAL.spark[(Math.random() * PAL.spark.length) | 0],
+    });
+  }
+
+  function updateSparks(dt, w, intensity) {
+    let rate = 14 + intensity * 38 + Math.abs(state.wind) * 8;
+    if (state.time === "night") rate *= 1.8;
+    if (state.time === "noon") rate *= 0.6;
+    if (Math.random() < rate * dt) spawnSpark(intensity, w);
+    if (Math.random() < intensity * 0.08) spawnSpark(intensity, w);
+
+    const wind = state.wind * 55;
+    for (let i = state.sparks.length - 1; i >= 0; i--) {
+      const s = state.sparks[i];
+      s.age += dt;
+      if (s.age > s.life) { state.sparks.splice(i, 1); continue; }
+
+      const rad = Math.hypot(s.x, s.z) + 0.001;
+      const rx = s.x / rad, rz = s.z / rad;
+
+      const axIso = wind * 0.55;
+      const ayIso = 38 + intensity * 20;
+      const azIso = wind * 0.15;
+
+      const axTop = rx * (42 + intensity * 28) + wind * 0.9;
+      const ayTop = 6;
+      const azTop = rz * (42 + intensity * 28) + wind * 0.12;
+
+      const axFr = wind * 1.15;
+      const ayFr = 52 + intensity * 24;
+      const azFr = 0;
+
+      s.vx += (axIso * w.iso + axTop * w.top + axFr * w.front) * dt;
+      s.vy += (ayIso * w.iso + ayTop * w.top + ayFr * w.front) * dt;
+      s.vz += (azIso * w.iso + azTop * w.top + azFr * w.front) * dt;
+      s.vx *= 0.985; s.vy *= 0.99; s.vz *= 0.985;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.z += s.vz * dt;
+    }
+    if (state.sparks.length > 90) state.sparks.splice(0, state.sparks.length - 90);
+  }
+
+  /* ---------- Web Audio：秋夜篝火（稀疏爆裂+柔和呼呼+沉降+夜基底+蝉合唱） ---------- */
+  const audio = {
+    ctx: null, master: null, comp: null,
+    brownGain: null, brownFilter: null,
+    whooshGain: null, whooshFilter: null,
+    burnGain: null, burnFilter: null, burnLevel: 0,
+    humGain: null, humOsc: null,
+    nightGain: null,
+    windGain: null, windFilter: null,
+    nextPop: 0, popLeft: 0, nextShift: 0, windPhase: 0,
+    cic: null, cicPhrase: null,
+  };
+
+  function stereoBuffer(actx, seconds, fill) {
+    const len = Math.floor(actx.sampleRate * seconds);
+    const buf = actx.createBuffer(2, len, actx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      fill(d, len, ch);
+    }
+    return buf;
+  }
+  function makeBrownBuffer(actx, seconds) {
+    // 双声道轻微去相关，干净立体声
+    let lastL = 0, lastR = 0;
+    return stereoBuffer(actx, seconds, (d, len, ch) => {
+      for (let i = 0; i < len; i++) {
+        const w = (Math.random() * 2 - 1 + (Math.random() * 2 - 1) * 0.3) / 1.3;
+        if (ch === 0) { lastL = (lastL + 0.02 * w) / 1.02; d[i] = lastL * 3.2; }
+        else { lastR = (lastR + 0.02 * w) / 1.02; d[i] = lastR * 3.2; }
+      }
+    });
+  }
+  function makeWhiteBuffer(actx, seconds) {
+    return stereoBuffer(actx, seconds, (d, len) => {
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.8;
+    });
+  }
+
+  function bootAudio() {
+    if (audio.ctx) {
+      if (audio.ctx.state === "suspended") audio.ctx.resume();
+      state.audioOn = true;
+      hint.style.opacity = "0";
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const actx = new AC();
+    // 总线：音量 + 压缩器防爆音（手机端）
+    const comp = actx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 20;
+    comp.ratio.value = 6; comp.attack.value = 0.004; comp.release.value = 0.24;
+    const master = actx.createGain();
+    master.gain.value = Math.pow(state.volume, 1.5) * 0.9;
+    master.connect(comp); comp.connect(actx.destination);
+
+    // 1) 闷烧床：棕噪 → 低通 300Hz，中等篝火稳定燃烧
+    const brownSrc = actx.createBufferSource();
+    brownSrc.buffer = makeBrownBuffer(actx, 4);
+    brownSrc.loop = true;
+    const brownFilter = actx.createBiquadFilter();
+    brownFilter.type = "lowpass"; brownFilter.frequency.value = 300; brownFilter.Q.value = 0.4;
+    const brownGain = actx.createGain(); brownGain.gain.value = 0.0001;
+    brownSrc.connect(brownFilter); brownFilter.connect(brownGain); brownGain.connect(master);
+    brownSrc.start();
+
+    // 2) 气流呼呼层：白噪 → 带通 ~500Hz，LFO 做阵风起伏 + 左右漂移
+    // 这就是"呼呼感"主体：不是贴底暖底，而是有呼吸的风裹火声
+    const whooshSrc = actx.createBufferSource();
+    whooshSrc.buffer = makeWhiteBuffer(actx, 3);
+    whooshSrc.loop = true; whooshSrc.playbackRate.value = 0.8;
+    const whooshFilter = actx.createBiquadFilter();
+    whooshFilter.type = "bandpass"; whooshFilter.frequency.value = 520; whooshFilter.Q.value = 0.5;
+    const whooshGain = actx.createGain(); whooshGain.gain.value = 0.03;
+    // 阵风 LFO：0.13Hz + 0.31Hz 双层，模拟气流一股一股（小幅度叠加在基座上）
+    const gust1 = actx.createOscillator(); gust1.type = "sine"; gust1.frequency.value = 0.13;
+    const gust1G = actx.createGain(); gust1G.gain.value = 0.014;
+    const gust2 = actx.createOscillator(); gust2.type = "sine"; gust2.frequency.value = 0.31;
+    const gust2G = actx.createGain(); gust2G.gain.value = 0.008;
+    gust1.connect(gust1G); gust1G.connect(whooshGain.gain);
+    gust2.connect(gust2G); gust2G.connect(whooshGain.gain);
+    gust1.start(); gust2.start();
+    const whooshPan = actx.createStereoPanner ? actx.createStereoPanner() : null;
+    // 声像也随风慢漂
+    const panLFO = actx.createOscillator(); panLFO.type = "sine"; panLFO.frequency.value = 0.09;
+    const panG = actx.createGain(); panG.gain.value = 0.35;
+    whooshSrc.connect(whooshFilter); whooshFilter.connect(whooshGain);
+    if (whooshPan) {
+      panLFO.connect(panG); panG.connect(whooshPan.pan);
+      whooshGain.connect(whooshPan); whooshPan.connect(master);
+      panLFO.start();
+    }
+    else whooshGain.connect(master);
+    whooshSrc.start();
+
+    // 3) 对流低频嗡鸣：55Hz 正弦 + 缓慢呼吸，极轻
+    const humOsc = actx.createOscillator(); humOsc.type = "sine"; humOsc.frequency.value = 55;
+    const humGain = actx.createGain(); humGain.gain.value = 0.0001;
+    humOsc.connect(humGain); humGain.connect(master);
+    humOsc.start();
+
+    // 4) 夜基底：极微弱低通棕噪，安静户外
+    const nightSrc = actx.createBufferSource();
+    nightSrc.buffer = makeBrownBuffer(actx, 4);
+    nightSrc.loop = true; nightSrc.playbackRate.value = 0.5;
+    const nightFilter = actx.createBiquadFilter();
+    nightFilter.type = "lowpass"; nightFilter.frequency.value = 190;
+    const nightGain = actx.createGain(); nightGain.gain.value = 0.012;
+    nightSrc.connect(nightFilter); nightFilter.connect(nightGain); nightGain.connect(master);
+    nightSrc.start();
+
+    // 5) 风声：白噪 → 带通，随 state.wind 起伏（滑块加回即自动跟随）
+    const windSrc = actx.createBufferSource();
+    windSrc.buffer = makeWhiteBuffer(actx, 2);
+    windSrc.loop = true; windSrc.playbackRate.value = 0.7;
+    const windFilter = actx.createBiquadFilter();
+    windFilter.type = "bandpass"; windFilter.frequency.value = 480; windFilter.Q.value = 0.45;
+    const windGain = actx.createGain(); windGain.gain.value = 0.0001;
+    windSrc.connect(windFilter); windFilter.connect(windGain); windGain.connect(master);
+    windSrc.start();
+
+    // 2.5) 持续燃烧：油锅式细碎滋滋（弱化版炸鸡油声）——几乎连续，非爆裂
+    const frySrc = actx.createBufferSource();
+    frySrc.buffer = makeWhiteBuffer(actx, 3);
+    frySrc.loop = true; frySrc.playbackRate.value = 0.9;
+    // 高频滋滋主体
+    const fryHP = actx.createBiquadFilter();
+    fryHP.type = "highpass"; fryHP.frequency.value = 2800;
+    // 中频油泡咕嘟
+    const fryBP = actx.createBiquadFilter();
+    fryBP.type = "bandpass"; fryBP.frequency.value = 700; fryBP.Q.value = 0.7;
+    const fryBPG = actx.createGain(); fryBPG.gain.value = 0.4;
+    const burnFilter = actx.createBiquadFilter();
+    burnFilter.type = "lowpass"; burnFilter.frequency.value = 6500;
+    const burnGain = actx.createGain(); burnGain.gain.value = 0.0001;
+    frySrc.connect(fryHP); fryHP.connect(burnFilter);
+    frySrc.connect(fryBP); fryBP.connect(fryBPG); fryBPG.connect(burnFilter);
+    burnFilter.connect(burnGain); burnGain.connect(master);
+    frySrc.start();
+
+    audio.ctx = actx;
+    audio.master = master; audio.comp = comp;
+    audio.brownGain = brownGain; audio.brownFilter = brownFilter;
+    audio.whooshGain = whooshGain; audio.whooshFilter = whooshFilter; audio.whooshPan = whooshPan;
+    audio.burnGain = burnGain; audio.burnFilter = burnFilter; audio.burnLevel = 0.02;
+    audio.humGain = humGain; audio.humOsc = humOsc;
+    audio.nightGain = nightGain;
+    audio.windGain = windGain; audio.windFilter = windFilter;
+    audio.nextPop = actx.currentTime + 1.0;
+    audio.popLeft = 0;
+    audio.nextShift = actx.currentTime + 25 + Math.random() * 20;
+    // 蝉合唱：3 只、轻微音高差，各自独立慢速 AM，远处感
+    const cicMaster = actx.createGain(); cicMaster.gain.value = 0;
+    cicMaster.connect(master);
+    const voices = [
+      { f: 4150, am: 17, pan: -0.5 }, { f: 4620, am: 23, pan: 0.4 }, { f: 5050, am: 29, pan: 0.1 },
+    ].map((v) => {
+      const o = actx.createOscillator(); o.type = "triangle"; o.frequency.value = v.f;
+      const am = actx.createOscillator(); am.type = "sine"; am.frequency.value = v.am;
+      const depth = actx.createGain(); depth.gain.value = 0.45;
+      const amG = actx.createGain(); amG.gain.value = 0.55;
+      am.connect(depth); depth.connect(amG.gain);
+      const bp = actx.createBiquadFilter(); bp.type = "bandpass";
+      bp.frequency.value = v.f; bp.Q.value = 9;
+      const p = actx.createStereoPanner ? actx.createStereoPanner() : null;
+      o.connect(amG); amG.connect(bp);
+      if (p) { p.pan.value = v.pan; bp.connect(p); p.connect(cicMaster); }
+      else bp.connect(cicMaster);
+      o.start(); am.start();
+      return { o, am, baseF: v.f, bp };
+    });
+    audio.cic = { master: cicMaster, voices };
+    // 鸣叫短语机：唱一阵、歇一阵
+    audio.cicPhrase = { singing: true, until: actx.currentTime + 5 + Math.random() * 4 };
+    state.audioOn = true;
+    hint.style.opacity = "0";
+  }
+
+  // 干燥硬木爆裂：低频 pop + 偶发高频 snap，强度适中、绝不机关枪
+  function popOnce(intensity, bright) {
+    if (!audio.ctx) return;
+    const actx = audio.ctx, t0 = actx.currentTime + Math.random() * 0.02;
+    const amp = Math.min(0.35, (0.08 + intensity * 0.16) * (0.5 + Math.random() * 0.7));
+    const pan = actx.createStereoPanner ? actx.createStereoPanner() : null;
+    if (pan) { pan.pan.value = (Math.random() * 2 - 1) * 0.55; pan.connect(audio.master); }
+    const out = pan || audio.master;
+    // 低频体：100→46Hz 闷 pop
+    const o = actx.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(95 + Math.random() * 55, t0);
+    o.frequency.exponentialRampToValueAtTime(46, t0 + 0.11);
+    const og = actx.createGain();
+    og.gain.setValueAtTime(amp, t0);
+    og.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.16);
+    o.connect(og); og.connect(out);
+    o.start(t0); o.stop(t0 + 0.2);
+    // 脆 snap：约 40% 概率带一声音稍亮的劈响
+    if (bright === undefined) bright = Math.random() < 0.4;
+    if (bright) {
+      const dur = 0.025 + Math.random() * 0.035;
+      const n = Math.max(16, Math.floor(actx.sampleRate * dur));
+      const b = actx.createBuffer(1, n, actx.sampleRate);
+      const d = b.getChannelData(0);
+      for (let i = 0; i < n; i++) {
+        const env = Math.pow(1 - i / n, 2.6);
+        d[i] = (Math.random() * 2 - 1) * env;
+      }
+      const s = actx.createBufferSource(); s.buffer = b;
+      const bp = actx.createBiquadFilter(); bp.type = "bandpass";
+      bp.frequency.value = 1400 + Math.random() * 1600; bp.Q.value = 1.4;
+      const g = actx.createGain();
+      g.gain.setValueAtTime(amp * 0.35, t0 + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur + 0.03);
+      s.connect(bp); bp.connect(g); g.connect(out);
+      s.start(t0);
+    }
+  }
+  // ---- 间隔层音色库：爆裂 / 烧断 ----
+  // 小爆裂：干、脆、短 —— 收得快、高频亮、低频只留一点肉
+  function crackSharp(vol) {
+    if (!audio.ctx) return;
+    const actx = audio.ctx, t0 = actx.currentTime + Math.random() * 0.015;
+    const amp = clamp(vol * (0.6 + Math.random() * 0.8), 0.02, 0.4);
+    // 更短促：12~30ms，包络更陡 —— 脆感的关键就是"收得快"
+    const dur = 0.012 + Math.random() * 0.018;
+    const n = Math.max(16, Math.floor(actx.sampleRate * dur));
+    const b = actx.createBuffer(1, n, actx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2);
+    const s = actx.createBufferSource(); s.buffer = b;
+    // 脆皮上移：2.8~6kHz，高 Q 咬字更利
+    const bp = actx.createBiquadFilter(); bp.type = "bandpass";
+    bp.frequency.value = 2800 + Math.random() * 3200; bp.Q.value = 1.8;
+    // 极高频劈头：6kHz 以上一闪而过，干柴劈开的"亮边"
+    const hp = actx.createBiquadFilter(); hp.type = "highpass";
+    hp.frequency.value = 6000 + Math.random() * 2000;
+    // 木腔大幅压低：只留一点厚度，不抢脆感
+    const body = actx.createBiquadFilter(); body.type = "bandpass";
+    body.frequency.value = 500 + Math.random() * 200; body.Q.value = 2;
+    const g1 = actx.createGain(), g2 = actx.createGain(), g3 = actx.createGain();
+    g1.gain.setValueAtTime(amp, t0);
+    g1.gain.exponentialRampToValueAtTime(0.0008, t0 + dur + 0.02);
+    g2.gain.setValueAtTime(amp * 0.22, t0);
+    g2.gain.exponentialRampToValueAtTime(0.0008, t0 + dur + 0.03);
+    g3.gain.setValueAtTime(amp * 0.4, t0);
+    g3.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.015);
+    const pan = actx.createStereoPanner ? actx.createStereoPanner() : null;
+    const out = pan || audio.master;
+    if (pan) { pan.pan.value = (Math.random() * 2 - 1) * 0.6; pan.connect(audio.master); }
+    s.connect(bp); bp.connect(g1); g1.connect(out);
+    s.connect(body); body.connect(g2); g2.connect(out);
+    s.connect(hp); hp.connect(g3); g3.connect(out);
+    s.start(t0);
+  }
+  // 烧断：中等偏大的一声"咔嚓断" —— 纯噪音版，无 sine 尾（去掉打鼓感）
+  function woodBreak(vol) {
+    if (!audio.ctx) return;
+    const actx = audio.ctx, t0 = actx.currentTime + Math.random() * 0.015;
+    const amp = clamp(vol, 0.05, 0.5);
+    const dur = 0.05 + Math.random() * 0.04;
+    const n = Math.max(16, Math.floor(actx.sampleRate * dur));
+    const b = actx.createBuffer(1, n, actx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.4);
+    const s = actx.createBufferSource(); s.buffer = b;
+    const bp = actx.createBiquadFilter(); bp.type = "bandpass";
+    bp.frequency.value = 1200 + Math.random() * 800; bp.Q.value = 1.2;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(amp, t0);
+    g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur + 0.05);
+    const pan = actx.createStereoPanner ? actx.createStereoPanner() : null;
+    const out = pan || audio.master;
+    if (pan) { pan.pan.value = (Math.random() * 2 - 1) * 0.4; pan.connect(audio.master); }
+    s.connect(bp); bp.connect(g); g.connect(out);
+    s.start(t0);
+  }
+  function schedulePhrase(intensity, now) {
+    // 循序渐进小短语：噼啪预热 → 烧断 → 余烬脆响收尾
+    const r = Math.random();
+    if (r < 0.55) {
+      // A. 爆裂群：2~5 声密集脆响
+      const n = 2 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < n; i++)
+        setTimeout(() => crackSharp(0.5 + intensity * 0.5), i * (60 + Math.random() * 110));
+      return 0.6 + Math.random() * 1.2;
+    } else {
+      // B. 烧断：预热脆响 + 断 + 余烬脆响收尾
+      setTimeout(() => crackSharp(0.6), 0);
+      setTimeout(() => crackSharp(0.5), 100 + Math.random() * 100);
+      setTimeout(() => woodBreak(0.6 + intensity * 0.4), 320 + Math.random() * 180);
+      // 烧断后常带一小串余烬脆响，代替掉落尾
+      setTimeout(() => crackSharp(0.35), 800 + Math.random() * 250);
+      setTimeout(() => crackSharp(0.3), 950 + Math.random() * 300);
+      return 1.0 + Math.random() * 1.6;
+    }
+  }
+  function shiftLog() {
+    if (!audio.ctx) return;
+    const actx = audio.ctx, t0 = actx.currentTime;
+    // 短促闷 knock：低通噪音，无音高滑音（去掉动物叫感）
+    const dur = 0.12, n = Math.floor(actx.sampleRate * dur);
+    const b = actx.createBuffer(1, n, actx.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.5);
+    const s = actx.createBufferSource(); s.buffer = b;
+    const lp = actx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 300;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0.12, t0);
+    g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur + 0.05);
+    s.connect(lp); lp.connect(g); g.connect(audio.master);
+    s.start(t0);
+  }
+  // 加柴：一小簇干裂 + 偶发小断声（手动添柴的即时反馈）
+  function crackleBurst(intensity) {
+    if (!audio.ctx) return;
+    const n = 3 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < n; i++) setTimeout(() => crackSharp(0.6 + intensity * 0.4), i * (90 + Math.random() * 140));
+    if (Math.random() < 0.4) setTimeout(() => woodBreak(0.4), n * 120 + Math.random() * 200);
+  }
+
+  function tickAudio(dt, intensity) {
+    if (!audio.ctx) return;
+    const now = audio.ctx.currentTime;
+    const woodFrac = clamp(state.logs.length / state.maxWood, 0, 1);
+    // 闷烧随木棍数递增：柴多声暖而厚
+    audio.brownGain.gain.setTargetAtTime(0.045 + woodFrac * 0.17, now, 0.4);
+    audio.brownFilter.frequency.setTargetAtTime(230 + woodFrac * 180, now, 0.4);
+    // 气流呼呼：基座随柴量，LFO 只做小幅呼吸（LFO 已直连 gain 做 ±0.02 起伏）
+    audio.whooshGain.gain.setTargetAtTime(0.028 + woodFrac * 0.035, now, 0.6);
+    audio.whooshFilter.frequency.setTargetAtTime(430 + woodFrac * 260 + Math.sin(audio.windPhase * 0.7) * 90, now, 0.5);
+    // 小柴燃烧：细碎滋滋 + 密集微爆（连续感主体）
+    if (audio.burnGain) {
+      const base = 0.014 + woodFrac * 0.030;
+      audio.burnLevel += ((Math.random() * 2 - 1) * 0.35 * base);
+      audio.burnLevel = clamp(audio.burnLevel, base * 0.55, base * 1.45);
+      audio.burnGain.gain.setTargetAtTime(audio.burnLevel, now, 0.05);
+    }
+    // 细碎微爆：每 0.1~0.5s 一个极小噼啪，模拟小柴持续燃烧（非间隔层）
+    if (audio.nextTick === undefined) audio.nextTick = now + 0.2;
+    if (now >= audio.nextTick) {
+      popOnce(0.15 + woodFrac * 0.35, Math.random() < 0.7);
+      // 指数分布：短间隔为主、偶尔长，绝不均匀
+      audio.nextTick = now + 0.08 + (-Math.log(1 - Math.random())) * 0.22;
+    }
+    // 对流嗡鸣：几乎潜意识层
+    audio.humGain.gain.setTargetAtTime(0.006 + woodFrac * 0.008, now, 0.6);
+    audio.master.gain.setTargetAtTime(Math.pow(state.volume, 1.5) * 0.9, now, 0.06);
+    // 风：强度跟 state.wind，叠慢呼吸配墨线飘动
+    audio.windPhase += dt * 0.85;
+    const breathe = 0.65 + 0.35 * Math.sin(audio.windPhase);
+    const wAbs = Math.min(1, Math.abs(state.wind) * 3);
+    audio.windGain.gain.setTargetAtTime((0.003 + wAbs * 0.05) * breathe, now, 0.4);
+    audio.windFilter.frequency.setTargetAtTime(380 + wAbs * 700, now, 0.5);
+    // 间隔层：小短语式调度 —— 爆裂 / 烧断循序渐进，平均 1~2s 有动静
+    if (now >= audio.nextPop) {
+      const wait = schedulePhrase(intensity, now);
+      audio.nextPop = now + wait;
+    }
+    // 雨丝点滴：稀疏极轻的高频小点，落在油滋层上，小雨感
+    if (audio.nextDrop === undefined) audio.nextDrop = now + 0.5;
+    if (now >= audio.nextDrop) {
+      const dur = 0.015 + Math.random() * 0.02;
+      const nn = Math.max(8, Math.floor(audio.ctx.sampleRate * dur));
+      const bb = audio.ctx.createBuffer(1, nn, audio.ctx.sampleRate);
+      const dd = bb.getChannelData(0);
+      for (let i = 0; i < nn; i++) dd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nn, 2);
+      const ss = audio.ctx.createBufferSource(); ss.buffer = bb;
+      const hp = audio.ctx.createBiquadFilter(); hp.type = "highpass";
+      hp.frequency.value = 4800 + Math.random() * 2500;
+      const gg = audio.ctx.createGain();
+      const ga = 0.006 + Math.random() * 0.012;
+      gg.gain.setValueAtTime(ga, now);
+      gg.gain.exponentialRampToValueAtTime(0.0008, now + dur + 0.02);
+      ss.connect(hp); hp.connect(gg); gg.connect(audio.master);
+      ss.start(now);
+      audio.nextDrop = now + 0.25 + Math.random() * 0.9;
+    }
+    // 木柴沉降：每 30~60 秒一次
+    if (now >= audio.nextShift) {
+      shiftLog();
+      audio.nextShift = now + 30 + Math.random() * 30;
+    }
+    // 蝉合唱：短语式起伏 + 按时间段变体（音量/疏密/亮度渐变）
+    const cK = state.cicadaK;
+    const base = (state.cicadaOn ? cK : 0) * 0.028 * (0.4 + state.volume);
+    if (audio.cic) {
+      const ph = audio.cicPhrase;
+      if (now >= ph.until) {
+        ph.singing = !ph.singing;
+        // 白天蝉更聒噪：唱得久、歇得短；夜晚反过来，断断续续
+        const dayK = 1 - state.nightK;
+        ph.until = now + (ph.singing ? 4 + Math.random() * 5 + dayK * 3 : 1.5 + Math.random() * 2.5 + state.nightK * 2);
+      }
+      const target = ph.singing ? base : 0.0001;
+      audio.cic.master.gain.setTargetAtTime(target, now, ph.singing ? 1.2 : 0.8);
+      // 不同时段音色渐变：正午亮而高，夜晚暗而低
+      const t = TIMES[state.time];
+      audio.cic.voices.forEach((v, i) => {
+        const fT = v.baseF * (1 + (t.cicada - 0.75) * 0.06);
+        v.o.frequency.setTargetAtTime(fT, now, 1.0);
+        v.bp.frequency.setTargetAtTime(fT, now, 1.0);
+      });
+    }
+  }
+
+  /* ---------- 绘制 ---------- */
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(innerWidth * dpr);
+    canvas.height = Math.floor(innerHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener("resize", resize);
+
+  function drawStone(st, w, C) {
+    const p = mixP(st.x, st.ry * 0.4, st.z, w);
+    const sx = p.x * C.sc + C.cx;
+    const sy = p.y * C.sc + C.cy;
+    const n = 8;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const isoR = (st.rx + st.rz) * 0.55;
+      const topRx = st.rx, topRz = st.rz;
+      const frx = st.rx * 1.1, fry = st.ry;
+      const ix = Math.cos(a) * isoR * 1.05;
+      const iy = Math.sin(a) * isoR * 0.55 - Math.abs(Math.cos(a)) * 2;
+      const tx = Math.cos(a) * topRx;
+      const ty = Math.sin(a) * topRz;
+      const fx = Math.cos(a) * frx;
+      const fy = Math.sin(a) * fry;
+      pts.push({
+        x: sx + (ix * w.iso + tx * w.top + fx * w.front) * C.sc * 0.12 * 8 / 8,
+        y: sy + (iy * w.iso + ty * w.top + fy * w.front) * C.sc * 0.12 * 8 / 8,
+      });
+    }
+    const k = C.sc;
+    const pts2 = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      pts2.push({
+        x: sx + (Math.cos(a) * st.rx * (0.9 * w.iso + 1 * w.top + 1 * w.front)
+          + Math.cos(a) * 2) * k * 0.55,
+        y: sy + (Math.sin(a) * (st.rz * 0.55 * w.iso + st.rz * w.top + st.ry * w.front)
+          - 3 * w.iso) * k * 0.55,
+      });
+    }
+    fillStroke(sketchLoop(pts2, st.seed, 2), st.c, INK, 1.5);
+  }
+
+  function drawTuft(tu, w, C) {
+    const p = mixP(tu.x, 0, tu.z, w);
+    const sx = p.x * C.sc + C.cx;
+    const sy = p.y * C.sc + C.cy;
+    const h = (10 * w.iso + 4 * w.top + 16 * w.front) * C.sc * 0.45;
+    for (let i = 0; i < tu.n; i++) {
+      const dx = (hash(tu.seed + i) - 0.5) * 10 * C.sc * 0.4;
+      sketchLine(sx, sy, sx + dx, sy - h * (0.7 + hash(tu.seed + i + 2) * 0.5), tu.seed + i, 1.2, PAL.grass);
+    }
+  }
+
+  function draw(dt) {
+    state.t += dt;
+    // 惯性：松手后 0.4s 指数减速
+    if (!state.dragging && (Math.abs(state.vyaw) > 0.0001 || Math.abs(state.vpitch) > 0.0001)) {
+      state.yaw = (state.yaw + state.vyaw * dt * 60) % (Math.PI * 2);
+      if (state.yaw < 0) state.yaw += Math.PI * 2;
+      state.pitch = clamp(state.pitch + state.vpitch * dt * 60, P_MIN, P_MAX);
+      const d = Math.pow(0.02, dt / 0.4);
+      state.vyaw *= d; state.vpitch *= d;
+      if (Math.abs(state.vyaw) < 0.0002) state.vyaw = 0;
+      if (Math.abs(state.vpitch) < 0.0002) state.vpitch = 0;
+    }
+    const w = viewWeights();
+    state.blend = w;
+    // 时间过渡 1.0s ease-in-out，色彩流动可见
+    if (state.bgT < 1) {
+      state.bgT = Math.min(1, state.bgT + dt / 1.0);
+      const u = ease(state.bgT), T = TIMES[state.time];
+      for (let i = 0; i < 3; i++) {
+        state.bgCur[i] = lerp(state.bgFrom[i], T.bg[i], u);
+        state.bg2Cur[i] = lerp(state.bg2From[i], T.bg2[i], u);
+      }
+      state.flameK = lerp(state.flameKFrom, T.flame, u);
+      state.nightK = lerp(state.nightKFrom, T.night, u);
+      state.cicadaK = lerp(state.cicadaKFrom, T.cicada, u);
+    }
+    let intensity = clamp(state.logs.length / 8, 0.25, 1.25);
+
+    for (let i = 0; i < state.logs.length; i++) {
+      const L = state.logs[i];
+      L.ty = restY(i);
+      L.y += (L.ty - L.y) * Math.min(1, dt * 6);
+    }
+
+    updateSparks(dt, state.blend, intensity);
+    tickAudio(dt, intensity);
+    drawCompass();
+
+    const W = innerWidth, H = innerHeight;
+    const C = cam(state.blend, W, H);
+
+    ctx.clearRect(0, 0, W, H);
+    const bg = `rgb(${state.bgCur.map(Math.round).join(",")})`;
+    const bg2 = `rgb(${state.bg2Cur.map(Math.round).join(",")})`;
+    const grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, bg2); grd.addColorStop(0.55, bg); grd.addColorStop(1, bg);
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, W, H);
+    // 淡淡水墨晕染：两团极淡墨晕（固定位置，不闪）
+    ctx.save();
+    ctx.globalAlpha = 0.10 * (1 - state.nightK * 0.8);
+    ctx.fillStyle = "#8a8a9a";
+    ctx.beginPath(); ctx.ellipse(W * 0.18, H * 0.24, 130, 60, 0.4, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(W * 0.85, H * 0.72, 160, 70, -0.3, 0, 7); ctx.fill();
+    ctx.restore();
+    document.body.style.color = state.nightK > 0.5 ? "#f3e6c8" : "#3d2b1f";
+
+    fillStroke(groundShape(state.blend, C), PAL.ground, INK, 2);
+    fillStroke(moundShape(state.blend, C), PAL.ground2, INK, 1.6);
+    fillStroke(pitShape(state.blend, C), PAL.pit, INK, 1.6);
+
+    state.tufts.forEach((tu) => drawTuft(tu, state.blend, C));
+    state.stones.forEach((st) => drawStone(st, state.blend, C));
+
+    const sortedLogs = state.logs.slice().sort((a, b) => {
+      const pa = mixP(0, a.y, 0, state.blend);
+      const pb = mixP(0, b.y, 0, state.blend);
+      return pa.y - pb.y;
+    });
+
+    const origin = mixP(0, 0, 0, state.blend);
+    const ox = origin.x * C.sc + C.cx;
+    const oy = origin.y * C.sc + C.cy;
+
+    // 晚上暖光晕（必须在 ox/oy 定义之后绘制）
+    if (state.nightK > 0.02) {
+      const g2 = ctx.createRadialGradient(ox, oy - 60, 10, ox, oy - 60, 260);
+      g2.addColorStop(0, `rgba(255,150,60,${0.35 * state.nightK})`);
+      g2.addColorStop(1, "rgba(255,150,60,0)");
+      ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
+    }
+
+    // 【修正1】叠放顺序：远柴 → 火焰 → 近柴（前景柴压住火焰底部）。
+    // 按视角深度排序后切分，保证任何角度至少1根前景柴可见。
+    const cyY = Math.cos(state.yaw), syY = Math.sin(state.yaw);
+    const depthOf = (log) => {
+      const ox0 = Math.cos(log.ang + 1.2) * log.off;
+      const oz0 = Math.sin(log.ang + 1.2) * log.off;
+      return ox0 * syY + oz0 * cyY;
+    };
+    const byDepth = state.logs.slice().sort((a, b) => depthOf(a) - depthOf(b));
+    const nBack = Math.max(1, Math.ceil(byDepth.length / 2));
+    let backLogs = byDepth.slice(0, nBack);
+    let frontLogs = byDepth.slice(nBack);
+    // 俯视时火焰在木柴上方：全部柴先画、火焰最后盖住，不再切前景柴
+    if (state.blend.top > 0.5) {
+      backLogs = byDepth.slice();
+      frontLogs = [];
+    }
+    if (frontLogs.length === 0 && backLogs.length > 1) {
+      frontLogs = [backLogs.pop()];
+    } else if (frontLogs.length === 0 && backLogs.length === 1) {
+      frontLogs = backLogs.slice();
+    }
+    backLogs.forEach((log) => drawLog(log, state.blend, C));
+    drawFlames(ox, oy, state.blend, C, intensity);
+    frontLogs.forEach((log) => drawLog(log, state.blend, C));
+
+    const inkNow = state.nightK > 0.5 ? "#f3e6c8" : INK;
+    // 近遮挡远：按深度排序再画
+    const srt = state.sparks.slice().sort((a, b) => {
+      const pa = mixP(a.x, a.y, a.z, state.blend), pb = mixP(b.x, b.y, b.z, state.blend);
+      return pa.y - pb.y;
+    });
+    srt.forEach((s) => {
+      const p = mixP(s.x, s.y, s.z, state.blend);
+      const fade = 1 - s.age / s.life;
+      // 越往上越透明：火尖刚冒出来最亮，飘高渐隐
+      const tipY = flameTipY(intensity, state.blend);
+      const hFade = clamp(1 - (s.y - tipY) / 160, 0.15, 1);
+      const aFade = Math.pow(Math.max(fade, 0), 1.5) * hFade;
+      const shrink = 0.4 + 0.6 * fade;
+      const jx = (hash(s.x + s.age) - 0.5) * 1.4;
+      const jy = (hash(s.z + s.age) - 0.5) * 1.4;
+      const px = p.x * C.sc + C.cx + jx, py = p.y * C.sc + C.cy + jy;
+      if (state.time === "night") {
+        // 白色空心圈+墨点拖尾，更亮更密
+        ctx.globalAlpha = Math.min(1, aFade * 1.4);
+        ctx.beginPath();
+        ctx.arc(px, py, (s.size * fade * 2.2 + 1.5) * shrink, 0, Math.PI * 2);
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.6; ctx.stroke();
+        ctx.beginPath(); ctx.arc(px - 3, py + 4, 1.6 * shrink, 0, 7);
+        ctx.fillStyle = "#111"; ctx.fill();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.globalAlpha = aFade * (state.time === "noon" ? 0.5 : 0.85);
+        ctx.beginPath();
+        ctx.arc(px, py, s.size * fade * (0.8 + C.sc * 0.15) * shrink, 0, Math.PI * 2);
+        ctx.fillStyle = s.c; ctx.fill();
+      }
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function drawLog(log, w, C) {
+    const g = logPoints(log, w, C);
+    // —— 圆柱体：轴向 e0->e1，法向 perp，上下两条侧边线 + 两端椭圆盖 ——
+    let dx = g.e1.x - g.e0.x, dy = g.e1.y - g.e0.y;
+    const alen = Math.hypot(dx, dy) || 1;
+    dx /= alen; dy /= alen;
+    const px = -dy, py = dx;
+    const r = g.r;
+    const tA = { x: g.e0.x + px * r, y: g.e0.y + py * r };
+    const bA = { x: g.e0.x - px * r, y: g.e0.y - py * r };
+    const tB = { x: g.e1.x + px * r, y: g.e1.y + py * r };
+    const bB = { x: g.e1.x - px * r, y: g.e1.y - py * r };
+    // 侧面：横跨圆柱直径的渐变（亮顶→本色→暗底），才有圆管体积感
+    const grad = ctx.createLinearGradient(tA.x, tA.y, bA.x, bA.y);
+    grad.addColorStop(0, "#dCA65f");
+    grad.addColorStop(0.35, log.c);
+    grad.addColorStop(0.75, "#4a2a14");
+    grad.addColorStop(1, "#2e180a");
+    ctx.beginPath();
+    ctx.moveTo(tA.x, tA.y);
+    ctx.lineTo(tB.x, tB.y);
+    ctx.lineTo(bB.x, bB.y);
+    ctx.lineTo(bA.x, bA.y);
+    ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+    ctx.save();
+    ctx.strokeStyle = INK; ctx.globalAlpha *= 0.6;
+    ctx.lineWidth = 1.8; ctx.lineJoin = "round";
+    ctx.stroke(); ctx.restore();
+    // 顶部高光：一笔沿轴向的亮带（圆柱反光）
+    ctx.save();
+    ctx.globalAlpha *= 0.5;
+    ctx.strokeStyle = "#f4d9a8";
+    ctx.lineWidth = Math.max(2, r * 0.28);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(lerp(g.e0.x, g.e1.x, 0.08) + px * r * 0.38, lerp(g.e0.y, g.e1.y, 0.08) + py * r * 0.38);
+    ctx.lineTo(lerp(g.e0.x, g.e1.x, 0.92) + px * r * 0.38, lerp(g.e0.y, g.e1.y, 0.92) + py * r * 0.38);
+    ctx.stroke();
+    ctx.restore();
+    // 树皮纵纹：沿轴向 2 笔皴线（种子固定，不闪）
+    for (let k = 0; k < 2; k++) {
+      const off = (k === 0 ? -0.15 : 0.55) * r;
+      sketchLine(
+        lerp(g.e0.x, g.e1.x, 0.12) - px * off, lerp(g.e0.y, g.e1.y, 0.12) - py * off,
+        lerp(g.e0.x, g.e1.x, 0.88) - px * off, lerp(g.e0.y, g.e1.y, 0.88) - py * off,
+        log.seed + 20 + k, 1.2, "rgba(74,42,20,.7)");
+    }
+    // 断面：浅色底 + 同心年轮 2 圈 + 深色芯
+    ctx.beginPath();
+    const er = Math.max(3.5, g.r * 0.65);
+    const j = jitterPt(g.e0.x, g.e0.y, log.seed + 4, 1.2);
+    ctx.ellipse(j.x, j.y, er * (0.55 + 0.35 * w.iso + 0.5 * w.front), er * (0.85 * w.top + 0.45 * w.iso + 0.5 * w.front), log.ang * w.top, 0, Math.PI * 2);
+    ctx.fillStyle = PAL.logEnd;
+    ctx.fill();
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    // 年轮（只画看得见的断面，不闪）
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(j.x, j.y, er * 0.55 * (0.55 + 0.35 * w.iso + 0.5 * w.front), er * 0.55 * (0.85 * w.top + 0.45 * w.iso + 0.5 * w.front), log.ang * w.top, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(122,74,40,.8)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(j.x, j.y, er * 0.28 * (0.55 + 0.35 * w.iso + 0.5 * w.front), er * 0.28 * (0.85 * w.top + 0.45 * w.iso + 0.5 * w.front), log.ang * w.top, 0, Math.PI * 2);
+    ctx.fillStyle = "#7a4a28"; ctx.fill();
+    ctx.restore();
+    // 另一端盖：圆柱两头都有盖，转动时近端盖也立体
+    const j2 = jitterPt(g.e1.x, g.e1.y, log.seed + 7, 1.2);
+    ctx.beginPath();
+    ctx.ellipse(j2.x, j2.y, er * (0.55 + 0.35 * w.iso + 0.5 * w.front), er * (0.85 * w.top + 0.45 * w.iso + 0.5 * w.front), log.ang * w.top, 0, Math.PI * 2);
+    ctx.fillStyle = PAL.logEnd;
+    ctx.fill();
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(j2.x, j2.y, er * 0.5 * (0.55 + 0.35 * w.iso + 0.5 * w.front), er * 0.5 * (0.85 * w.top + 0.45 * w.iso + 0.5 * w.front), log.ang * w.top, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(122,74,40,.8)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+    // 烧焦段：靠近火心的一头熏黑（取 e1 端，按距中心距离算）
+    const charX = lerp(g.e0.x, g.e1.x, 0.5), charY = lerp(g.e0.y, g.e1.y, 0.5);
+    const charR = Math.max(g.r * 1.1, 10);
+    const chg = ctx.createRadialGradient(charX, charY, 1, charX, charY, charR * 2.2);
+    chg.addColorStop(0, "rgba(25,12,6,.85)");
+    chg.addColorStop(0.55, "rgba(25,12,6,.35)");
+    chg.addColorStop(1, "rgba(25,12,6,0)");
+    ctx.fillStyle = chg;
+    ctx.beginPath(); ctx.arc(charX, charY, charR * 2.2, 0, 7); ctx.fill();
+    sketchLine(g.e0.x, g.e0.y, g.e1.x, g.e1.y, log.seed + 9, 1.1, "#5a3018");
+  }
+
+  function drawFlames(ox, oy, w, C, intensity) {
+    // 火底钉死：世界坐标 FIREBASE_Y（两柴交叉处），强度只改变高度/宽度，底部像素几乎不动
+    const anchor = mixP(0, FIREBASE_Y, 0, w);
+    const baseY = anchor.y * C.sc + C.cy - w.front * 30 * C.sc;
+    // 时间只影响亮度不影响大小：傍晚/晚上叠一层暖光
+    if (state.flameK > 0.7) {
+      ctx.save();
+      ctx.globalAlpha = (state.flameK - 0.7) * 0.25;
+      ctx.fillStyle = "#ffb050";
+      ctx.beginPath(); ctx.arc(ox, baseY - 78 * C.sc * flameBoost(), 117 * C.sc * flameBoost(), 0, 7); ctx.fill();
+      ctx.restore();
+    }
+    for (let i = 0; i < state.flames.length; i++) {
+      const f = state.flames[i];
+      const px = ox + f.ox * C.sc * 0.35;
+      const py = baseY + f.oz * C.sc * 0.12 * w.iso;
+      const pts = flameOutline(px, py, f.layer, state.t, w, intensity, C.sc);
+      fillStroke(pts, PAL.flame[Math.min(f.layer, 3)], INK, f.layer === 0 ? 1.7 : 1.3);
+      // 枯笔飞白：火焰边缘补2笔断续墨线（固定种子，不闪烁）
+      for (let k = 0; k < 2; k++) {
+        const i0 = (f.layer * 5 + k * 7) % pts.length;
+        const i1 = (i0 + 4) % pts.length;
+        ctx.beginPath();
+        ctx.moveTo(pts[i0].x, pts[i0].y);
+        ctx.lineTo(pts[(i0 + 2) % pts.length].x, pts[(i0 + 2) % pts.length].y);
+        ctx.moveTo(pts[(i0 + 3) % pts.length].x, pts[(i0 + 3) % pts.length].y);
+        ctx.lineTo(pts[i1].x, pts[i1].y);
+        ctx.strokeStyle = "rgba(61,43,31,.55)";
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+      }
+    }
+  }
+
+  /* ---------- 循环与交互 ---------- */
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    draw(dt);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  /* ---------- 拖拽旋转（只绑 canvas，滑块/按钮不触发） ---------- */
+  (function orbit() {
+    let lx = 0, ly = 0, down = false;
+    canvas.style.touchAction = "none";
+    canvas.addEventListener("pointerdown", (e) => {
+      down = true; state.dragging = true; state.vyaw = state.vpitch = 0;
+      lx = e.clientX; ly = e.clientY;
+      canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+      bootAudio();
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!down) return;
+      const dx = e.clientX - lx, dy = e.clientY - ly;
+      lx = e.clientX; ly = e.clientY;
+      const k = 0.008;
+      state.yaw = (state.yaw + dx * k) % (Math.PI * 2);
+      if (state.yaw < 0) state.yaw += Math.PI * 2;
+      state.pitch = clamp(state.pitch + dy * 0.006, P_MIN, P_MAX);
+      state.vyaw = dx * k / 1; state.vpitch = dy * 0.006 / 1;
+    });
+    function up() { down = false; state.dragging = false; }
+    canvas.addEventListener("pointerup", up);
+    canvas.addEventListener("pointercancel", up);
+  })();
+
+  /* ---------- 左下角手绘风小罗盘 ---------- */
+  const cc = document.getElementById("cc"), cx2 = cc.getContext("2d");
+  function drawCompass() {
+    const g = cx2; g.clearRect(0, 0, 128, 128);
+    g.save(); g.translate(64, 64);
+    g.fillStyle = "#f8edd8"; g.strokeStyle = "#3d2b1f"; g.lineWidth = 4;
+    g.beginPath();
+    for (let i = 0; i <= 10; i++) {
+      const a = i / 10 * Math.PI * 2;
+      const r = 46 + (hash(i * 3.3) - 0.5) * 4;
+      const x = Math.cos(a) * r, y = Math.sin(a) * r;
+      i ? g.lineTo(x + (hash(i)-.5)*2, y + (hash(i+9)-.5)*2) : g.moveTo(x, y);
+    }
+    g.closePath(); g.fill(); g.stroke();
+    const deg = state.yaw * 180 / Math.PI;
+    g.rotate(-state.yaw);
+    g.fillStyle = "#c4452a"; g.strokeStyle = "#3d2b1f"; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, -30); g.lineTo(9, 8); g.lineTo(-9, 8); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = "#3d2b1f"; g.beginPath(); g.arc(0, 0, 5, 0, 7); g.fill();
+    g.restore();
+    cx2.fillStyle = "#3d2b1f"; cx2.font = "22px cursive"; cx2.textAlign = "center";
+    cx2.fillText(Math.round(deg) + "°", 64, 122);
+  }
+
+  function removeLog() {
+    if (state.logs.length <= 1) return;
+    state.logs.pop();
+    state.wood = state.logs.length;
+  }
+  document.getElementById("addWood").addEventListener("click", (e) => {
+    e.stopPropagation();
+    bootAudio();
+    addLog(true);
+    if (audio.ctx) crackleBurst(1);
+  });
+  document.getElementById("rmWood").addEventListener("click", (e) => {
+    e.stopPropagation();
+    bootAudio();
+    removeLog();
+    if (audio.ctx) popOnce(0.4);
+  });
+  document.getElementById("vol").addEventListener("input", (e) => {
+    state.volume = Number(e.target.value) / 100;
+    bootAudio();
+  });
+  function setTime(name) {
+    if (state.time === name) return;
+    state.bgFrom = [...state.bgCur]; state.bg2From = [...state.bg2Cur];
+    state.flameKFrom = state.flameK; state.nightKFrom = state.nightK;
+    state.cicadaKFrom = state.cicadaK;
+    state.bgT = 0; state.time = name;
+    document.querySelectorAll("[data-time]").forEach((b) => b.classList.toggle("active", b.dataset.time === name));
+  }
+  document.querySelectorAll("[data-time]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); bootAudio(); setTime(b.dataset.time); }));
+  document.getElementById("cicada").addEventListener("click", (e) => {
+    e.stopPropagation(); bootAudio();
+    state.cicadaOn = !state.cicadaOn;
+    e.currentTarget.classList.toggle("on", state.cicadaOn);
+  });
+  function pointerStart() { bootAudio(); }
+  document.body.addEventListener("touchstart", function once() {
+    bootAudio();
+    document.body.removeEventListener("touchstart", once);
+  }, { passive: true });
+
+  document.querySelectorAll("button, input").forEach((el) => {
+    el.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
+  });
+})();
+  </script>
+</body>
+</html>
